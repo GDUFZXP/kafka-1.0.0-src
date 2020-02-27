@@ -49,6 +49,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Higher level consumer access to the network layer with basic support for request futures. This class
  * is thread-safe, but provides no synchronization for response callbacks. This guarantees that no locks
  * are held when they are invoked.
+ * 负责客户端和Kafka集群各个Node节点之间的连接
+ * 核心的方法是poll方法
  */
 public class ConsumerNetworkClient implements Closeable {
     private static final long MAX_POLL_TIMEOUT_MS = 5000L;
@@ -56,12 +58,18 @@ public class ConsumerNetworkClient implements Closeable {
     // the mutable state of this class is protected by the object's monitor (excluding the wakeup
     // flag and the request completion queue below).
     private final Logger log;
+    //NetworkClient对象
     private final KafkaClient client;
+    //缓冲队列，ConcurrentMap<Node, ConcurrentLinkedQueue<ClientRequest>> unsent;
+    //记录每个节点的缓冲请求队列
     private final UnsentRequests unsent = new UnsentRequests();
+    //管理kafka的元数据
     private final Metadata metadata;
     private final Time time;
     private final long retryBackoffMs;
+    //ClientRequest在unsent队列中的超时时间
     private final long unsentExpiryMs;
+    //KafkaConsumer是否正在执行不可中断的方法
     private final AtomicBoolean wakeupDisabled = new AtomicBoolean();
 
     // when requests complete, they are transferred to this queue prior to invocation. The purpose

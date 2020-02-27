@@ -58,6 +58,8 @@ import java.util.Random;
  * user-facing producer and consumer clients.
  * <p>
  * This class is not thread-safe!
+ * 负责管理客户端和kafka集群中每个节点之间的连接
+ * 依赖于KeySelector、InFlightRequest、Metadata等组件
  */
 public class NetworkClient implements KafkaClient {
 
