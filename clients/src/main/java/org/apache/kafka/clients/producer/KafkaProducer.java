@@ -231,25 +231,36 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
     private static final AtomicInteger PRODUCER_CLIENT_ID_SEQUENCE = new AtomicInteger(1);
     private static final String JMX_PREFIX = "kafka.producer";
     public static final String NETWORK_THREAD_PREFIX = "kafka-producer-network-thread";
-
+    //生产者的唯一标志
     private final String clientId;
     // Visible for testing
     final Metrics metrics;
+    //分区选择器，根据一定的策略，将消息路由到合适的分区
     private final Partitioner partitioner;
+    //消息的最大长度，长度包含了消息头、序列化后的key和序列化后的value的长度
     private final int maxRequestSize;
+    //发送单个消息的缓冲区大小
     private final long totalMemorySize;
+    //集群的元信息
     private final Metadata metadata;
+    //消息收集器，可以理解是各个分区的缓冲队列  ConcurrentMap<TopicPartition, Deque<ProducerBatch>> batches;
     private final RecordAccumulator accumulator;
+    //发送消息的任务，实现了runnable接口，在ioThread中使用
     private final Sender sender;
     private final Thread ioThread;
+    //压缩算法，none,gzip,snappy,lz4 这是针对收集器中消息进行的压缩，消息越多，压缩效果越好
     private final CompressionType compressionType;
     private final Sensor errors;
     private final Time time;
     private final ExtendedSerializer<K> keySerializer;
     private final ExtendedSerializer<V> valueSerializer;
+    //配置对象，kafka producer 的配置
     private final ProducerConfig producerConfig;
+    //等待更新kafka集群元数据的最大时长
     private final long maxBlockTimeMs;
+    //消息的超时时间，从发送到接收到响应ACK的最大时长
     private final int requestTimeoutMs;
+    //拦截器集合，用于在发送前对消息拦截或者修改，也可以先于用户的callback，进行一些预处理
     private final ProducerInterceptors<K, V> interceptors;
     private final ApiVersions apiVersions;
     private final TransactionManager transactionManager;
@@ -335,6 +346,8 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                     MetricsReporter.class);
             reporters.add(new JmxReporter(JMX_PREFIX));
             this.metrics = new Metrics(metricConfig, reporters, time);
+            //根据配置反射生成 分区、序列化、反序列化的对象 和拦截器列表
+
             ProducerMetrics metricsRegistry = new ProducerMetrics(this.metrics);
             this.partitioner = config.getConfiguredInstance(ProducerConfig.PARTITIONER_CLASS_CONFIG, Partitioner.class);
             long retryBackoffMs = config.getLong(ProducerConfig.RETRY_BACKOFF_MS_CONFIG);
@@ -360,6 +373,9 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             List<ProducerInterceptor<K, V>> interceptorList = (List) (new ProducerConfig(userProvidedConfigs, false)).getConfiguredInstances(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG,
                     ProducerInterceptor.class);
             this.interceptors = interceptorList.isEmpty() ? null : new ProducerInterceptors<>(interceptorList);
+
+
+            //kafka集群的基本配置，集群元数据信息
             ClusterResourceListeners clusterResourceListeners = configureClusterResourceListeners(keySerializer, valueSerializer, interceptorList, reporters);
             this.metadata = new Metadata(retryBackoffMs, config.getLong(ProducerConfig.METADATA_MAX_AGE_CONFIG),
                     true, true, clusterResourceListeners);
@@ -375,6 +391,8 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             short acks = configureAcks(config, transactionManager != null, log);
 
             this.apiVersions = new ApiVersions();
+
+            //消息收集器
             this.accumulator = new RecordAccumulator(logContext,
                     config.getInt(ProducerConfig.BATCH_SIZE_CONFIG),
                     this.totalMemorySize,
@@ -389,6 +407,8 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             this.metadata.update(Cluster.bootstrap(addresses), Collections.<String>emptySet(), time.milliseconds());
             ChannelBuilder channelBuilder = ClientUtils.createChannelBuilder(config);
             Sensor throttleTimeSensor = Sender.throttleTimeSensor(metricsRegistry.senderMetrics);
+
+            //创建NetworkClient kafkaProducer网络IO的核心
             NetworkClient client = new NetworkClient(
                     new Selector(config.getLong(ProducerConfig.CONNECTIONS_MAX_IDLE_MS_CONFIG),
                             this.metrics, time, "producer", channelBuilder, logContext),
@@ -405,6 +425,8 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                     apiVersions,
                     throttleTimeSensor,
                     logContext);
+
+            //创建发送任务
             this.sender = new Sender(logContext,
                     client,
                     this.metadata,
@@ -420,6 +442,8 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                     this.transactionManager,
                     apiVersions);
             String ioThreadName = NETWORK_THREAD_PREFIX + " | " + clientId;
+
+            //启动发送线程
             this.ioThread = new KafkaThread(ioThreadName, this.sender, true);
             this.ioThread.start();
             this.errors = this.metrics.sensor("errors");
